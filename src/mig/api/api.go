@@ -67,6 +67,10 @@ func main() {
 
 	// register routes
 	r := mux.NewRouter()
+
+	// serve ./ui/static directory from /static URL
+	r.PathPrefix("/static").Handler(http.FileServer(http.Dir("./ui")))
+
 	s := r.PathPrefix(ctx.Server.BaseRoute).Subrouter()
 	// unauthenticated endpoints
 	s.HandleFunc("/heartbeat", getHeartbeat).Methods("GET")
