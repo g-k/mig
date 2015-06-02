@@ -192,6 +192,92 @@ Generating a token in Python
 		print token
 		print r.text
 
+Generating a token in node.js
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code:: javascript
+
+		#!/usr/bin/env node
+		// gen-idfx-token.js
+		var crypto = require('crypto');
+		var biguint = require('biguint-format');
+
+		var generateIdFixOrigin = function () {
+		  // https://github.com/jvehent/idfix#51origin-string
+		  var now = new Date();
+		  now.setMilliseconds(0);
+		  var isoNow = now.toISOString().replace('.000Z', 'Z');
+		  var nonce = biguint(crypto.randomBytes(16), 'dec');  // if bigunint isn't available could do .toJSON().data.join(''); but would get extra 1's
+		  return '1;' + isoNow + ';' + nonce; //  + ';'; in the spec but not used by MIG yet
+		};
+
+		console.log(generateIdFixOrigin());
+
+.. code:: javascript
+
+		#!/usr/bin/env node
+		// opengpg-detach-sig.js (requires openpgp and biguint-format npm modules)
+		// Reads message from STDIN and creates a detached PGP signature using
+		// path to secret key arg and OPENPGP_PASSPHRASE env arg
+
+		var fs = require('fs');
+		var pgp = require('openpgp');
+
+
+		if (process.argv.length < 3) {
+		  console.error("The ASCII-armored secret key argument is missing.");
+		  process.exit(1);
+		}
+		if (!process.env.OPENPGP_PASSPHRASE) {
+		  console.error("The OPENPGP_PASSPHRASE environment is missing.");
+		  process.exit(1);
+		}
+
+		var secretKeyFilename = process.argv[2];
+		var secretKey = pgp.key.readArmored(fs.readFileSync(secretKeyFilename, 'utf8')).keys[0];
+		secretKey.decrypt(process.env.OPENPGP_PASSPHRASE);
+
+		var detachSig = function (sig) {
+		  var sigLines = sig.split('\n')
+		    .map(function (l) { return l.replace('\r', ''); })
+		    .filter(function (l) { return (l !== '' && l.substring(0, '-----'.length) !==  '-----'); });
+
+		  // Drop the first four lines e.g.
+		  // 'Hash: SHA256',
+		  // '1;2015-04-08T05:37:53Z;jr3i14bIkRvlNtYzq+mV4w==',
+		  // 'Version: OpenPGP.js VERSION',
+		  //   'Comment: http://openpgpjs.org',
+		  return sigLines.slice(4).join('').replace('\n', '');
+		};
+
+		var message = '';
+		process.stdin.setEncoding('utf8');
+		process.stdin.on('readable', function() {
+		var chunk = process.stdin.read();
+		  if (chunk !== null) {
+		    message += chunk;
+		  }
+		});
+		process.stdin.on('end', function() {
+		  // console.debug("Got message:", message);
+
+		  // opengpg.js doesn't have a detached sig but we have to strip the
+		  // '--BEGIN PGP SIGNATURE--' lines anyway
+		  pgp.signClearMessage(secretKey, message)
+		    .then(function (sig) {
+		      console.log(detachSig(sig));
+		    })
+		    .catch(function () {
+		      console.log("There was an error signing the message.", arguments);
+		    });
+		});
+
+.. code:: sh
+
+		$ ./gen-idfx-token.js > /tmp/js-token
+		$ cat /tmp/js-token | OPENPGP_PASSPHRASE='mig test' ./openpgp-detach-sig.js mig-test-sec.asc > /tmp/js-token.asc
+		$ echo "X-PGPAUTHORIZATION:$(cat /tmp/js-token);$(cat /tmp/js-token.asc)" # X-PGPAUTHORIZATION: 1;2015-06-01T23:52:03Z;137785491819984666205931285425329772718;wsBcBAEBCAAQBQJ
+
 API endpoints
 -------------
 
